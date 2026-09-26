@@ -22,10 +22,9 @@ int main(int argc, char* argv[])
     MPI_Comm_size(MPI_COMM_WORLD, &nTasks);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-    // Проверка количества процессов, так как логика жестко завязана на 4 процесса
     if (nTasks != 4) {
         if (rank == 0) {
-            cout << "Error: This program must be run with exactly 4 processes!" << endl;
+            cout << "Error: We need 4 processes!" << endl;
         }
         MPI_Finalize();
         return 0;
@@ -64,7 +63,7 @@ int main(int argc, char* argv[])
         }
         Matrix_A[3][3] = 1.f;
 
-        cout << "\nMatrix 1 (Padded):\n";
+        cout << "\nMatrix 1 (Expanded to 4x4):\n";
         for (int i = 0; i < 4; i++) {
             for (int j = 0; j < 4; j++) {
                 std::cout << Matrix_A[i][j] << " ";
@@ -72,7 +71,6 @@ int main(int argc, char* argv[])
             cout << endl;
         }
 
-        // ИСПРАВЛЕНО: было i < 4 в условии внутреннего цикла, что вызывало бесконечный цикл
         for (int i = 0; i < 4; i++) {
             for (int j = 0; j < 4; j++) {
                 recieve_matrix_a.push_back(Matrix_A[i][j]); //перенос в одномерный массив
@@ -100,7 +98,6 @@ int main(int argc, char* argv[])
     else {
         MPI_Status status;
 
-        // ИСПРАВЛЕНО: Выделяем память в векторах перед приемом данных
         recieve_matrix_b.resize(16);
         MPI_Recv(recieve_matrix_b.data(), 16, MPI_FLOAT, 0, 99, MPI_COMM_WORLD, &status);
 
