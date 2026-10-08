@@ -2,13 +2,108 @@
 #include <mpi.h>
 #include <vector>
 #include <random>
-
+#include <chrono>
 using namespace std;
+
+
+int test()
+{
+
+    std::vector<std::vector<float>> Matrix_A(3, std::vector<float>(3));
+    std::vector<std::vector<float>> Matrix_B(4, std::vector<float>(4));
+
+    std::random_device RD;
+    std::mt19937 gen(RD());
+    std::uniform_real_distribution<float> dist(0.1, 133.7);
+    auto start = std::chrono::high_resolution_clock::now();
+
+    cout << "\nMatrix 1:\n";
+    for (int j = 0; j < 3; j++) {
+        for (int z = 0; z < 3; z++) {
+            Matrix_A[j][z] = dist(gen);
+            cout << Matrix_A[j][z] << " ";
+        }
+        cout << "\n";
+    }
+
+    cout << "\nMatrix 2:\n";
+    for (int j = 0; j < 4; j++) {
+        for (int z = 0; z < 4; z++) {
+            Matrix_B[j][z] = dist(gen);
+            cout << Matrix_B[j][z] << " ";
+        }
+        cout << "\n";
+    }
+
+    Matrix_A.resize(4, std::vector<float>(4));
+    for (int i = 0; i < 4; i++)
+        Matrix_A[i].resize(4);
+    for (int i = 0; i < 4; i++) {
+        Matrix_A[i][3] = 0.f;
+        Matrix_A[3][i] = 0.f;
+    }
+    Matrix_A[3][3] = 1.f;
+
+    cout << "\nMatrix 1 (Expanded to 4x4):\n";
+    for (int i = 0; i < 4; i++) {
+        for (int j = 0; j < 4; j++)
+            cout << Matrix_A[i][j] << " ";
+        cout << endl;
+    }
+
+    vector<float> flatA, flatB;
+    for (int i = 0; i < 4; i++)
+        for (int j = 0; j < 4; j++)
+            flatA.push_back(Matrix_A[i][j]);
+    for (int i = 0; i < 4; i++)
+        for (int j = 0; j < 4; j++)
+            flatB.push_back(Matrix_B[i][j]);
+
+    float matrixC[16];
+ 
+
+
+
+        for (int row = 0; row < 4; row++) {
+            for (int col = 0; col < 4; col++) {
+                float sum = 0.0f;
+                for (int k = 0; k < 4; k++) {
+                    sum += flatA[row * 4 + k] * flatB[k * 4 + col];
+                }
+                matrixC[row * 4 + col] = sum;
+            }
+        }
+    
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+
+    cout << "\nResult Matrix C (4x4):\n";
+    for (int i = 0; i < 4; i++) {
+        for (int j = 0; j < 4; j++)
+            cout << matrixC[i * 4 + j] << "\t";
+        cout << endl;
+    }
+
+    cout << "Execution time: " << duration.count() << " mks ("
+        << duration.count() / 1000.0 << " ms)" << endl;
+
+    return 0;
+}
+
+
+    
+
 
 int main(int argc, char* argv[])
 {
+    //test(); //Раскомментировать если нужно замерить последовательно
     std::vector<std::vector<float>> Matrix_A(3, std::vector<float>(3));//3 на 3
     std::vector<std::vector<float>> Matrix_B(4, std::vector<float>(4));//4 на 4
+    
+   
+
+    
 
     //Здесь начинается многопоточность
     vector<float> recieve_matrix_a;
@@ -22,6 +117,11 @@ int main(int argc, char* argv[])
     MPI_Comm_size(MPI_COMM_WORLD, &nTasks);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
+    MPI_Barrier(MPI_COMM_WORLD);      // Для замеров
+    double t0 = MPI_Wtime();
+
+
+    cout << "Process " << rank << " started" << endl;
     if (nTasks != 4) {
         if (rank == 0) {
             cout << "Error: We need 4 processes!" << endl;
@@ -88,6 +188,7 @@ int main(int argc, char* argv[])
             float* matrix_a = recieve_matrix_a.data();
             MPI_Send(matrix_b, 16, MPI_FLOAT, process, 99, MPI_COMM_WORLD);
             MPI_Send(&matrix_a[process * 4], 4, MPI_FLOAT, process, 98, MPI_COMM_WORLD);
+
         }
 
         for (int i = 0; i < 4; i++) row[i] = recieve_matrix_a[i];
@@ -113,6 +214,9 @@ int main(int argc, char* argv[])
         }
         result.push_back(sum);
     }
+    double t1 = MPI_Wtime();
+    double local_time = t1 - t0, total_time;
+    MPI_Reduce(&local_time, &total_time, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
 
     if (rank == 0) {
         float matrixC[16];
@@ -124,6 +228,7 @@ int main(int argc, char* argv[])
             MPI_Recv(&matrixC[source_process * 4], 4, MPI_FLOAT, source_process, 97, MPI_COMM_WORLD, &status);
         }
 
+        
         cout << "\nResult Matrix C (4x4):\n";
         for (int i = 0; i < 4; i++) {
             for (int j = 0; j < 4; j++) {
@@ -131,10 +236,16 @@ int main(int argc, char* argv[])
             }
             cout << endl;
         }
+        cout << "Total  execution time: " << total_time << " c" << endl;
+        cout << "Rank " << rank << " execution time: " << (t1 - t0) << " c\n";
+
     }
     else {
         MPI_Send(result.data(), 4, MPI_FLOAT, 0, 97, MPI_COMM_WORLD);
+        cout << "Rank " << rank << " execution time: " << (t1 - t0) << " c\n";
+
     }
+    
 
     MPI_Finalize();//Конец
     return 0;
