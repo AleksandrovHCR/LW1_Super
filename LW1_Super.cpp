@@ -6,6 +6,9 @@
 using namespace std;
 
 
+const int REPEATS = 170000;
+
+
 int test()
 {
 
@@ -15,7 +18,6 @@ int test()
     std::random_device RD;
     std::mt19937 gen(RD());
     std::uniform_real_distribution<float> dist(0.1, 133.7);
-    auto start = std::chrono::high_resolution_clock::now();
 
     cout << "\nMatrix 1:\n";
     for (int j = 0; j < 3; j++) {
@@ -35,53 +37,46 @@ int test()
         cout << "\n";
     }
 
-    Matrix_A.resize(4, std::vector<float>(4));
-    for (int i = 0; i < 4; i++)
-        Matrix_A[i].resize(4);
-    for (int i = 0; i < 4; i++) {
-        Matrix_A[i][3] = 0.f;
-        Matrix_A[3][i] = 0.f;
-    }
-    Matrix_A[3][3] = 1.f;
+    // Матрица А и так 3х3, под неё обрезаем матрицу B (а не дополняем A до 4х4).
+    // Берём левый верхний угол 4х4 - первые 3 строки и 3 столбца.
+    vector<float> flatA, flatB;
+    for (int i = 0; i < 3; i++)
+        for (int j = 0; j < 3; j++)
+            flatA.push_back(Matrix_A[i][j]);
+    for (int i = 0; i < 3; i++)
+        for (int j = 0; j < 3; j++)
+            flatB.push_back(Matrix_B[i][j]);   // Matrix_B[i][3] и Matrix_B[3][j] не берём
 
-    cout << "\nMatrix 1 (Expanded to 4x4):\n";
-    for (int i = 0; i < 4; i++) {
-        for (int j = 0; j < 4; j++)
-            cout << Matrix_A[i][j] << " ";
+    cout << "\nMatrix 2 (cropped to 3x3):\n";
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++)
+            cout << flatB[i * 3 + j] << " ";
         cout << endl;
     }
 
-    vector<float> flatA, flatB;
-    for (int i = 0; i < 4; i++)
-        for (int j = 0; j < 4; j++)
-            flatA.push_back(Matrix_A[i][j]);
-    for (int i = 0; i < 4; i++)
-        for (int j = 0; j < 4; j++)
-            flatB.push_back(Matrix_B[i][j]);
+    float matrixC[9];
 
-    float matrixC[16];
- 
+    auto start = std::chrono::high_resolution_clock::now();
 
-
-
-        for (int row = 0; row < 4; row++) {
-            for (int col = 0; col < 4; col++) {
+    for (int rep = 0; rep < REPEATS; rep++) {
+        for (int row = 0; row < 3; row++) {
+            for (int col = 0; col < 3; col++) {
                 float sum = 0.0f;
-                for (int k = 0; k < 4; k++) {
-                    sum += flatA[row * 4 + k] * flatB[k * 4 + col];
+                for (int k = 0; k < 3; k++) {
+                    sum += flatA[row * 3 + k] * flatB[k * 3 + col];
                 }
-                matrixC[row * 4 + col] = sum;
+                matrixC[row * 3 + col] = sum;
             }
         }
-    
+    }
 
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
 
-    cout << "\nResult Matrix C (4x4):\n";
-    for (int i = 0; i < 4; i++) {
-        for (int j = 0; j < 4; j++)
-            cout << matrixC[i * 4 + j] << "\t";
+    cout << "\nResult Matrix C (3x3):\n";
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++)
+            cout << matrixC[i * 3 + j] << "\t";
         cout << endl;
     }
 
@@ -92,43 +87,34 @@ int test()
 }
 
 
-    
-
-
 int main(int argc, char* argv[])
 {
-    //test(); //Раскомментировать если нужно замерить последовательно
+    // test(); //Раскомментировать если нужно замерить последовательно
     std::vector<std::vector<float>> Matrix_A(3, std::vector<float>(3));//3 на 3
     std::vector<std::vector<float>> Matrix_B(4, std::vector<float>(4));//4 на 4
-    
-   
-
-    
 
     //Здесь начинается многопоточность
     vector<float> recieve_matrix_a;
     vector<float> recieve_matrix_b;//Для передачи
 
-    vector<float> row(4);//строка для передачи
     vector<float> result;
+    float matrixC[9];//Итоговая матрица, 3х3
+    long long ops = 0;//Счётчик 
+    MPI_Status status;
     int nTasks, rank;
     MPI_Init(&argc, &argv);//Начало
 
     MPI_Comm_size(MPI_COMM_WORLD, &nTasks);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-    MPI_Barrier(MPI_COMM_WORLD);      // Для замеров
-    double t0 = MPI_Wtime();
-
-
-    cout << "Process " << rank << " started" << endl;
-    if (nTasks != 4) {
+    if (nTasks != 3) {   
         if (rank == 0) {
-            cout << "Error: We need 4 processes!" << endl;
+            cout << "Error: We need 3 processes!" << endl;
         }
         MPI_Finalize();
         return 0;
     }
+    cout << "Process " << rank << " started" << endl;
 
     if (rank == 0) {//Материнская задача
         //Инициализация массивов
@@ -153,99 +139,99 @@ int main(int argc, char* argv[])
                 cout << "\n";
             }
         }
-        //Приведение матрицы А к соотв виду
-        Matrix_A.resize(4, std::vector<float>(4));
-        for (int i = 0; i < 4; i++)
-            Matrix_A[i].resize(4);
-        for (int i = 0; i < 4; i++) {
-            Matrix_A[i][3] = 0.f;
-            Matrix_A[3][i] = 0.f;
-        }
-        Matrix_A[3][3] = 1.f;
 
-        cout << "\nMatrix 1 (Expanded to 4x4):\n";
-        for (int i = 0; i < 4; i++) {
-            for (int j = 0; j < 4; j++) {
-                std::cout << Matrix_A[i][j] << " ";
-            }
-            cout << endl;
-        }
-
-        for (int i = 0; i < 4; i++) {
-            for (int j = 0; j < 4; j++) {
+      
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
                 recieve_matrix_a.push_back(Matrix_A[i][j]); //перенос в одномерный массив
             }
         }
-        for (int i = 0; i < 4; i++) {
-            for (int j = 0; j < 4; j++) {
-                recieve_matrix_b.push_back(Matrix_B[i][j]); //перенос в одномерный массив для удобства
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
+                recieve_matrix_b.push_back(Matrix_B[i][j]); //перенос в одномерный массив для удобства, лишние строку/столбец не берём
             }
         }
 
-        ///Разброс по процессам
-        for (int process = 1; process < 4; process++) {
-            float* matrix_b = recieve_matrix_b.data();
-            float* matrix_a = recieve_matrix_a.data();
-            MPI_Send(matrix_b, 16, MPI_FLOAT, process, 99, MPI_COMM_WORLD);
-            MPI_Send(&matrix_a[process * 4], 4, MPI_FLOAT, process, 98, MPI_COMM_WORLD);
-
+        cout << "\nMatrix 2 (cropped to 3x3):\n";
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++)
+                cout << recieve_matrix_b[i * 3 + j] << " ";
+            cout << endl;
         }
-
-        for (int i = 0; i < 4; i++) row[i] = recieve_matrix_a[i];
-
-        recieve_matrix_b = recieve_matrix_b;
-        recieve_matrix_a.assign(recieve_matrix_a.begin(), recieve_matrix_a.begin() + 4);
     }
     else {
-        MPI_Status status;
-
-        recieve_matrix_b.resize(16);
-        MPI_Recv(recieve_matrix_b.data(), 16, MPI_FLOAT, 0, 99, MPI_COMM_WORLD, &status);
-
-        recieve_matrix_a.resize(4);
-        MPI_Recv(recieve_matrix_a.data(), 4, MPI_FLOAT, 0, 98, MPI_COMM_WORLD, &status);
+        recieve_matrix_b.resize(9);
+        recieve_matrix_a.resize(3);
     }
 
-    //рассчёты 
-    for (int col = 0; col < 4; col++) {
-        float sum = 0.0f;
-        for (int k = 0; k < 4; k++) {
-            sum += recieve_matrix_a[k] * recieve_matrix_b[k * 4 + col];
+    MPI_Barrier(MPI_COMM_WORLD);      // Для замеров
+    double t0 = MPI_Wtime();
+
+    for (int rep = 0; rep < REPEATS; rep++) {// 1 млн. операций
+
+        if (rank == 0) {
+            ///Разброс по процессам
+            for (int process = 1; process < 3; process++) {
+                MPI_Send(recieve_matrix_b.data(), 9, MPI_FLOAT, process, 99, MPI_COMM_WORLD);
+                MPI_Send(&recieve_matrix_a[process * 3], 3, MPI_FLOAT, process, 98, MPI_COMM_WORLD);
+                ops += 2;
+            }
         }
-        result.push_back(sum);
+        else {
+            MPI_Recv(recieve_matrix_b.data(), 9, MPI_FLOAT, 0, 99, MPI_COMM_WORLD, &status);
+            MPI_Recv(recieve_matrix_a.data(), 3, MPI_FLOAT, 0, 98, MPI_COMM_WORLD, &status);
+        }
+
+        //рассчёты
+        result.clear();
+        for (int col = 0; col < 3; col++) {
+            float sum = 0.0f;
+            for (int k = 0; k < 3; k++) {
+                sum += recieve_matrix_a[k] * recieve_matrix_b[k * 3 + col];
+            }
+            result.push_back(sum);
+        }
+
+        //Возврат результатов в родительскую задачу
+        if (rank == 0) {
+            for (int j = 0; j < 3; j++) matrixC[j] = result[j];
+
+            for (int source_process = 1; source_process < 3; source_process++) {
+                MPI_Recv(&matrixC[source_process * 3], 3, MPI_FLOAT, source_process, 97, MPI_COMM_WORLD, &status);
+            }
+        }
+        else {
+            MPI_Send(result.data(), 3, MPI_FLOAT, 0, 97, MPI_COMM_WORLD);
+            ops += 1;
+        }
     }
-    double t1 = MPI_Wtime();
+
+    double t1 = MPI_Wtime();//замер времени
     double local_time = t1 - t0, total_time;
     MPI_Reduce(&local_time, &total_time, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
 
+    long long total_ops;
+    MPI_Reduce(&ops, &total_ops, 1, MPI_LONG_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
+
     if (rank == 0) {
-        float matrixC[16];
 
-        for (int j = 0; j < 4; j++) matrixC[j] = result[j];
-
-        MPI_Status status;
-        for (int source_process = 1; source_process < 4; source_process++) {
-            MPI_Recv(&matrixC[source_process * 4], 4, MPI_FLOAT, source_process, 97, MPI_COMM_WORLD, &status);
-        }
-
-        
-        cout << "\nResult Matrix C (4x4):\n";
-        for (int i = 0; i < 4; i++) {
-            for (int j = 0; j < 4; j++) {
-                cout << matrixC[i * 4 + j] << "\t";
+        cout << "\nResult Matrix C (3x3):\n";
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
+                cout << matrixC[i * 3 + j] << "\t";
             }
             cout << endl;
         }
         cout << "Total  execution time: " << total_time << " c" << endl;
-        cout << "Rank " << rank << " execution time: " << (t1 - t0) << " c\n";
+        cout << "Total operations: " << total_ops << endl;
+        cout << "Rank " << rank << " execution time: " << (t1 - t0) << " c, operations: " << ops << "\n";
 
     }
     else {
-        MPI_Send(result.data(), 4, MPI_FLOAT, 0, 97, MPI_COMM_WORLD);
-        cout << "Rank " << rank << " execution time: " << (t1 - t0) << " c\n";
+        cout << "Rank " << rank << " execution time: " << (t1 - t0) << " c, operations: " << ops << "\n";
 
     }
-    
+
 
     MPI_Finalize();//Конец
     return 0;
