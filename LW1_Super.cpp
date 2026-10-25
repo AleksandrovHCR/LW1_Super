@@ -8,12 +8,13 @@ using namespace std;
 
 const int REPEATS = 170000;
 
+auto time_prev = 0;
 
-int test()
+int test_1()
 {
 
     std::vector<std::vector<float>> Matrix_A(3, std::vector<float>(3));
-    std::vector<std::vector<float>> Matrix_B(4, std::vector<float>(4));
+    std::vector<std::vector<float>> Matrix_B(3, std::vector<float>(3));
 
     std::random_device RD;
     std::mt19937 gen(RD());
@@ -29,8 +30,8 @@ int test()
     }
 
     cout << "\nMatrix 2:\n";
-    for (int j = 0; j < 4; j++) {
-        for (int z = 0; z < 4; z++) {
+    for (int j = 0; j < 3; j++) {
+        for (int z = 0; z < 3; z++) {
             Matrix_B[j][z] = dist(gen);
             cout << Matrix_B[j][z] << " ";
         }
@@ -47,12 +48,7 @@ int test()
         for (int j = 0; j < 3; j++)
             flatB.push_back(Matrix_B[i][j]);   // Matrix_B[i][3] и Matrix_B[3][j] не берём
 
-    cout << "\nMatrix 2 (cropped to 3x3):\n";
-    for (int i = 0; i < 3; i++) {
-        for (int j = 0; j < 3; j++)
-            cout << flatB[i * 3 + j] << " ";
-        cout << endl;
-    }
+   
 
     float matrixC[9];
 
@@ -85,20 +81,89 @@ int test()
 
     return 0;
 }
+int test_2()
+{
+
+    std::vector<std::vector<float>> Matrix_A(4, std::vector<float>(4));
+    std::vector<std::vector<float>> Matrix_B(4, std::vector<float>(4));
+
+    std::random_device RD;
+    std::mt19937 gen(RD());
+    std::uniform_real_distribution<float> dist(0.1, 133.7);
+
+    cout << "\nMatrix 1:\n";
+    for (int j = 0; j < 4; j++) {
+        for (int z = 0; z < 4; z++) {
+            Matrix_A[j][z] = dist(gen);
+            cout << Matrix_A[j][z] << " ";
+        }
+        cout << "\n";
+    }
+
+    cout << "\nMatrix 2:\n";
+    for (int j = 0; j < 4; j++) {
+        for (int z = 0; z < 4; z++) {
+            Matrix_B[j][z] = dist(gen);
+            cout << Matrix_B[j][z] << " ";
+        }
+        cout << "\n";
+    }
+
+  
+    vector<float> flatA, flatB;
+    for (int i = 0; i < 4; i++)
+        for (int j = 0; j < 4; j++)
+            flatA.push_back(Matrix_A[i][j]);
+    for (int i = 0; i < 4; i++)
+        for (int j = 0; j < 4; j++)
+            flatB.push_back(Matrix_B[i][j]);   
+
+
+
+    float matrixC[16];
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    for (int rep = 0; rep < REPEATS; rep++) {
+        for (int row = 0; row < 4; row++) {
+            for (int col = 0; col < 4; col++) {
+                float sum = 0.0f;
+                for (int k = 0; k < 4; k++) {
+                    sum += flatA[row * 4 + k] * flatB[k * 4 + col];
+                }
+                matrixC[row * 4 + col] = sum;
+            }
+        }
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+
+    cout << "\nResult Matrix C (3x3):\n";
+    for (int i = 0; i < 4; i++) {
+        for (int j = 0; j < 4; j++)
+            cout << matrixC[i * 4 + j] << "\t";
+        cout << endl;
+    }
+
+    cout << "Execution time: " << duration.count() << " mks ("
+        << duration.count() / 1000.0 << " ms)" << endl;
+
+    return 0;
+}
 
 
 int main(int argc, char* argv[])
 {
-    // test(); //Раскомментировать если нужно замерить последовательно
-    std::vector<std::vector<float>> Matrix_A(3, std::vector<float>(3));//3 на 3
-    std::vector<std::vector<float>> Matrix_B(4, std::vector<float>(4));//4 на 4
-
+   
     //Здесь начинается многопоточность
     vector<float> recieve_matrix_a;
     vector<float> recieve_matrix_b;//Для передачи
 
     vector<float> result;
-    float matrixC[9];//Итоговая матрица, 3х3
+    float matrixC_1[9];//Итоговая матрица, 3х3
+    float matrixC_2[16];//Итоговая матрица, 4х4
+
     long long ops = 0;//Счётчик 
     MPI_Status status;
     int nTasks, rank;
@@ -107,9 +172,19 @@ int main(int argc, char* argv[])
     MPI_Comm_size(MPI_COMM_WORLD, &nTasks);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-    if (nTasks != 3) {   
+    std::vector<std::vector<float>> Matrix_A(nTasks, std::vector<float>(nTasks));//3 на 3
+    std::vector<std::vector<float>> Matrix_B(nTasks, std::vector<float>(nTasks));//3 на 3
+
+    if (nTasks != 3 && nTasks!=4) {   
+
         if (rank == 0) {
-            cout << "Error: We need 3 processes!" << endl;
+            cout << "3x3 non-multiprocess" << endl;
+
+            test_1();
+            cout << "4x4 non-multiprocess" << endl;
+            test_2();
+
+            cout << "We need 3 or 4 processes to launch multiprocess! To start multiprocess calculations: mpiexec - n 3 .\\x64\\Debug\\LW1_Super.exe" << endl;
         }
         MPI_Finalize();
         return 0;
@@ -122,46 +197,42 @@ int main(int argc, char* argv[])
         std::mt19937 gen(RD());
         std::uniform_real_distribution<float> dist(0.1, 133.7);
 
-        for (int i = 3; i <= 4; i++) {
-            if (i == 3) cout << "\nMatrix 1:\n";
-            else  cout << "\nMatrix 2:\n";
-            for (int j = 0; j < i; j++) {
-                for (int z = 0; z < i; z++) {
-                    if (i == 3) {
-                        Matrix_A[j][z] = dist(gen);
-                        std::cout << Matrix_A[j][z] << " ";
-                    }
-                    else {
-                        Matrix_B[j][z] = dist(gen);
-                        std::cout << Matrix_B[j][z] << " ";
-                    }
-                }
-                cout << "\n";
+     
+
+        cout << "\nMatrix 1:\n";
+        for (int j = 0; j < nTasks; j++) {
+            for (int z = 0; z < nTasks; z++) {
+                Matrix_A[j][z] = dist(gen);
+                std::cout << Matrix_A[j][z] << " ";
             }
+            cout << "\n";
         }
 
-      
-        for (int i = 0; i < 3; i++) {
-            for (int j = 0; j < 3; j++) {
+        cout << "\nMatrix 2:\n";
+        for (int j = 0; j < nTasks; j++) {
+            for (int z = 0; z < nTasks; z++) {
+                Matrix_B[j][z] = dist(gen);
+                std::cout << Matrix_B[j][z] << " ";
+            }
+            cout << "\n";
+        }
+
+        for (int i = 0; i < nTasks; i++) {
+            for (int j = 0; j < nTasks; j++) {
                 recieve_matrix_a.push_back(Matrix_A[i][j]); //перенос в одномерный массив
             }
         }
-        for (int i = 0; i < 3; i++) {
-            for (int j = 0; j < 3; j++) {
-                recieve_matrix_b.push_back(Matrix_B[i][j]); //перенос в одномерный массив для удобства, лишние строку/столбец не берём
+        for (int i = 0; i < nTasks; i++) {
+            for (int j = 0; j < nTasks; j++) {
+                recieve_matrix_b.push_back(Matrix_B[i][j]); 
             }
         }
 
-        cout << "\nMatrix 2 (cropped to 3x3):\n";
-        for (int i = 0; i < 3; i++) {
-            for (int j = 0; j < 3; j++)
-                cout << recieve_matrix_b[i * 3 + j] << " ";
-            cout << endl;
-        }
+       
     }
     else {
-        recieve_matrix_b.resize(9);
-        recieve_matrix_a.resize(3);
+        recieve_matrix_b.resize(nTasks*nTasks);
+        recieve_matrix_a.resize(nTasks);
     }
 
     MPI_Barrier(MPI_COMM_WORLD);      // Для замеров
@@ -171,37 +242,44 @@ int main(int argc, char* argv[])
 
         if (rank == 0) {
             ///Разброс по процессам
-            for (int process = 1; process < 3; process++) {
-                MPI_Send(recieve_matrix_b.data(), 9, MPI_FLOAT, process, 99, MPI_COMM_WORLD);
-                MPI_Send(&recieve_matrix_a[process * 3], 3, MPI_FLOAT, process, 98, MPI_COMM_WORLD);
+            for (int process = 1; process < nTasks; process++) {
+                MPI_Send(recieve_matrix_b.data(), nTasks*nTasks, MPI_FLOAT, process, 99, MPI_COMM_WORLD);
+                MPI_Send(&recieve_matrix_a[process * nTasks], nTasks, MPI_FLOAT, process, 98, MPI_COMM_WORLD);
                 ops += 2;
             }
         }
         else {
-            MPI_Recv(recieve_matrix_b.data(), 9, MPI_FLOAT, 0, 99, MPI_COMM_WORLD, &status);
-            MPI_Recv(recieve_matrix_a.data(), 3, MPI_FLOAT, 0, 98, MPI_COMM_WORLD, &status);
+            MPI_Recv(recieve_matrix_b.data(), nTasks*nTasks, MPI_FLOAT, 0, 99, MPI_COMM_WORLD, &status);
+            MPI_Recv(recieve_matrix_a.data(), nTasks, MPI_FLOAT, 0, 98, MPI_COMM_WORLD, &status);
         }
 
         //рассчёты
         result.clear();
-        for (int col = 0; col < 3; col++) {
+        for (int col = 0; col < nTasks; col++) {
             float sum = 0.0f;
-            for (int k = 0; k < 3; k++) {
-                sum += recieve_matrix_a[k] * recieve_matrix_b[k * 3 + col];
+            for (int k = 0; k < nTasks; k++) {
+                sum += recieve_matrix_a[k] * recieve_matrix_b[k * nTasks + col];
             }
             result.push_back(sum);
         }
 
         //Возврат результатов в родительскую задачу
         if (rank == 0) {
-            for (int j = 0; j < 3; j++) matrixC[j] = result[j];
+            for (int j = 0; j < nTasks; j++) {
+                if(nTasks==3)
+                    matrixC_1[j] = result[j];
+                else matrixC_2[j] = result[j];
 
-            for (int source_process = 1; source_process < 3; source_process++) {
-                MPI_Recv(&matrixC[source_process * 3], 3, MPI_FLOAT, source_process, 97, MPI_COMM_WORLD, &status);
+            }
+
+            for (int source_process = 1; source_process < nTasks; source_process++) {
+                if(nTasks==3)
+                    MPI_Recv(&matrixC_1[source_process * nTasks], nTasks, MPI_FLOAT, source_process, 97, MPI_COMM_WORLD, &status);
+                else MPI_Recv(&matrixC_2[source_process * nTasks], nTasks, MPI_FLOAT, source_process, 97, MPI_COMM_WORLD, &status);
             }
         }
         else {
-            MPI_Send(result.data(), 3, MPI_FLOAT, 0, 97, MPI_COMM_WORLD);
+            MPI_Send(result.data(), nTasks, MPI_FLOAT, 0, 97, MPI_COMM_WORLD);
             ops += 1;
         }
     }
@@ -215,10 +293,13 @@ int main(int argc, char* argv[])
 
     if (rank == 0) {
 
-        cout << "\nResult Matrix C (3x3):\n";
-        for (int i = 0; i < 3; i++) {
-            for (int j = 0; j < 3; j++) {
-                cout << matrixC[i * 3 + j] << "\t";
+        cout << "\nResult Matrix C ("<< nTasks<<"x"<< nTasks<<"):\n";
+        for (int i = 0; i < nTasks; i++) {
+            for (int j = 0; j < nTasks; j++) {
+                if(nTasks==3)
+                cout << matrixC_1[i * nTasks + j] << "\t";
+                else cout << matrixC_2[i * nTasks + j] << "\t";
+
             }
             cout << endl;
         }
